@@ -287,6 +287,7 @@ def threadTwo():
      saveToManifest(filePath, N,getFileMD5Hash(filePath),chunksList)
      dumpTheManifestfile()
      time.sleep(5)
+     files.append(filePath)
      deletedFiles(files)
 
 
@@ -324,10 +325,10 @@ def threadThree():
                          # request file from another peers
                          # get the peers to request files from 
                          for f in filesToRequest:
-                              ports = getListOfPeersPortsHavingtheChunkFileName(f)
-                              portOne = ports[0]
+                              portsHavingTheFile = getListOfPeersPortsHavingtheChunkFileName(f)
+                              portOne = portsHavingTheFile[0]
 
-                              # send request to peer to get resend the file back
+                              # send request to the first peer having the file to resend the file back
                               try:
                                    requestFileFromPeer(peerPort= portOne,filename= f)
                               except SocketError as e:
@@ -337,12 +338,13 @@ def threadThree():
                               
                               # restore the file chunk the next peer
                               for p in peersPorts:
-                                   if p not in ports:
+                                   if p not in portsHavingTheFile: # if peer doesn't alreading have the file
                                         StoreFileAtPeer(p,f)
                                         newChunk = chunk(fileName=f,order=0,peerPort=p)
                                         addPeerChunkToManifest(chunk=newChunk)
                                         dumpTheManifestfile()
                                         break
+                         deletedFiles(filesToRequest)
                else:
                     tempDictOfPeers[port] = lastContactTime
           dictOfPeers = tempDictOfPeers
@@ -369,6 +371,7 @@ t1.start()
 t2 = threading.Thread(target=threadTwo, args=()) 
 t2.start()
 
+# start a thread responsible for making sure the client in still connected
 t3 = threading.Thread(target=threadThree, args=())
 t3.start()
 

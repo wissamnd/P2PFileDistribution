@@ -16,13 +16,32 @@ class fileDistributed:
         self.number_of_chunks = number_of_chunks
         self.md5Hash = md5Hash
         self.chunks = chunks
+    def __str__(self):
+        s = "Filename: {0}\tNumber of Chunks: {1} md5: {2} chunks:".format(self.name,self.number_of_chunks,self.md5Hash)
+        if(len(self.chunks)> 0):
+          s+= " ["
+          for chunk in self.chunks:
+               s+= chunk.toString()
+               s+= " ,"
+          s = s[0:len(s)-2]
+          s+= "]"
+        else:
+             s+= " Empty"
+        return s
+    def set_chunks(self, chunks): 
+        self.chunks = chunks 
 
 class chunk:
     def __init__(self, fileName,order ,peerPort):
         self.fileName = fileName
         self.order = order
         self.peerPort = peerPort
-
+    
+    def toString(self):
+        return "(Chunk filename: {0} Order: {1} peerPort: {2})".format(self.fileName,self.order,self.peerPort)
+    def __str__(self):
+        return "Chunk filename: {0} Order: {1} peerPort: {2}".format(self.fileName,self.order,self.peerPort)
+     
 
 manifest = []
 
