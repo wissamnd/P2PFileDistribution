@@ -11,6 +11,20 @@ import random
 import logging
 import errno
 class fileDistributed:
+    """
+    A class used to represent a file distributed by the Tracker
+
+    Attributes
+    ----------
+    name : str
+          the name of the file
+    numberOfChunks : int
+          the number of chunks in a file
+    md5Hash : str
+        the md5 hash of the file
+    chunks : [chunk]
+        file chunks
+    """
     def __init__(self, name, number_of_chunks , md5Hash, chunks):
         self.name = name
         self.number_of_chunks = number_of_chunks
@@ -32,6 +46,18 @@ class fileDistributed:
         self.chunks = chunks 
 
 class chunk:
+    """
+    A class used to represent a distributed file chunk
+
+    Attributes
+    ----------
+    fileName : str
+          the name of the chunk or file 
+    order : int
+          the order of the chunk
+    peerPort : int
+        the listening port of the peer having the chunk 
+    """
     def __init__(self, fileName,order ,peerPort):
         self.fileName = fileName
         self.order = order
@@ -42,70 +68,44 @@ class chunk:
     def __str__(self):
         return "Chunk filename: {0} Order: {1} peerPort: {2}".format(self.fileName,self.order,self.peerPort)
      
-serverPort = 12000
-serverSocket = socket(AF_INET,SOCK_STREAM)
-serverSocket.bind(('',serverPort))
-serverSocket.listen(10)
-manifest = []
-files = ["file.txt"]
-peersPorts = []
-
 
 
 def splitIntoChunks(filePath, numberOfChunks):
+     """Splits the files given its path into N number of chunks"""
      files = []
      fileSize = os.path.getsize(filePath) 
      CHUNK_SIZE = math.ceil((fileSize/numberOfChunks)) # divide the file into N chuncks
+
+
      file_number = 1
-     with open(filePath) as f:
+     with open(filePath, "rb") as f:
           chunk = f.read(CHUNK_SIZE)
           while chunk:
                filename = str(file_number)+ filePath
                files.append(filename)
-               with open(filename,"w+") as chunk_file:
+               with open(filename,"wb") as chunk_file:
                     chunk_file.write(chunk)
                file_number += 1
                chunk = f.read(CHUNK_SIZE)
           f.close()
      return files
 
-def getFileMD5Hash(path):
-     with open(path,"rb") as f:
+def getFileMD5Hash(filePath):
+     """Returns the md5 has of the files given its path"""
+     with open(filePath,"rb") as f:
           bytes = f.read() # read file as bytes
           readable_hash = hashlib.md5(bytes).hexdigest()
           return readable_hash
 
-def getManifestObjects():
-    filehandler = open("manifest.obj", 'rb') 
-    manifest = pickle.load(filehandler)
-    return manifest
-
-# combines the file using a list of chuncks composing that file
-def combineFiles(filesPath, combined_file):
-     output_file = open(combined_file,'wb')
-     for path in files:
-          fileSize = os.path.getsize(path)
-          input_file = open(path, 'rb')
-          while True:
-               bytes = input_file.read(fileSize)
-               if not bytes:
-                    break
-               output_file.write(bytes)
-          input_file.close()
-     output_file.close()
-
-# delete the files in the filesPath Array
-def deletedFiles(filesPath):
-     for path in filesPath:
+def deletedFiles(listOfPathsToFiles):
+     """Delete the files in the listOfPathsToFiles Array"""
+     for path in listOfPathsToFiles:
           os.remove(path)
+          
 
-# save the splitted file into the manifest and manifest file
-def saveToManifest(filename, numberOfChunks, md5Hash, chuncks):
-     distributed_file = fileDistributed(filename,numberOfChunks, md5Hash, chuncks)
-     manifest.append(distributed_file)
-
-# remove peer from manifest in case of a peer timeout
 def removePeerFromManifest(port):
+     """Remove peer from the manifest in case of a peer timeout. Return the files that
+     the tracker will need to request back from other peers"""
      filesToRequest = []
      for i in range(len(manifest)):
           fileWithChunks = manifest[i]
@@ -125,16 +125,13 @@ def removePeerFromManifest(port):
                print(f)
      return filesToRequest
 
-
 def getListOfPeersPortsHavingtheChunkFileName(chunkFileName):
      listOfPorts = []
-
      for files in manifest:
           for chunk in files.chunks:
                if(chunk.fileName == chunkFileName):
                     listOfPorts.append(chunk.peerPort)
      return listOfPorts
-
 
 def addPeerChunkToManifest(chunk):
      for i in range(len(manifest)):
@@ -147,6 +144,10 @@ def addPeerChunkToManifest(chunk):
                manifest.pop(i)
                manifest.append(fileWithChunks)
 
+def saveToManifest(filename, numberOfChunks, md5Hash, chuncks):
+     """Save the distributed file into the manifest and manifest file"""
+     distributed_file = fileDistributed(filename,numberOfChunks, md5Hash, chuncks)
+     manifest.append(distributed_file)
 
 def dumpTheManifestfile():
      manifestfile = open('manifest.obj', 'wb') 
@@ -166,9 +167,10 @@ def requestFileFromPeer(peerPort,filename):
     # Recieving the requested file or manifest file from the peer
     recieveFile(Socket)
     Socket.close()
+
 def recieveFile(peerSocket):
     SEPARATOR = "<SEPARATOR>"
-    BUFFER_SIZE = 4096 # send 4096 bytes each time step
+    BUFFER_SIZE = 4096
     received = peerSocket.recv(BUFFER_SIZE).decode()
     filename, filesize = received.split(SEPARATOR)
     # remove absolute path if there is
@@ -190,11 +192,8 @@ def recieveFile(peerSocket):
 
 
 def sendFile(filename, connectionSocket):
-     
      SEPARATOR = "<SEPARATOR>"
      BUFFER_SIZE = 4096 # send 4096 bytes each time step
-     
-
      # send file info
      filesize = os.path.getsize(filename)
      connectionSocket.send((filename+SEPARATOR+str(filesize)).encode())
@@ -203,16 +202,14 @@ def sendFile(filename, connectionSocket):
      progress = tqdm.tqdm(range(filesize), "Sending "+filename, unit="B", unit_scale=True, unit_divisor=1024)
      with open(filename, "rb") as f:
           for _ in progress:
-               # read the bytes from the file
                bytes_read = f.read(BUFFER_SIZE)
                if not bytes_read:
-                    # file transmitting is done
                     break
-               # we use sendall to assure transimission in 
-               # busy networks
                connectionSocket.sendall(bytes_read)
-               # update the progress bar
                progress.update(len(bytes_read))
+
+def shufflingFunction():
+     return 0.1
 
 
 def listenForIncomingPeerRequests():
@@ -250,16 +247,15 @@ def StoreFileAtPeer(peerPort, filePath):
 
 def threadOne():
      while True:
-          # in case a file is requested from any peer
           listenForIncomingPeerRequests()
 
 def threadTwo():
-     N = 2
+     N = 3
      # while number of peers is less than N
      while (len(peersPorts) < N):
           time.sleep(5)
      time.sleep(5)
-     filePath = "filecomb.txt"
+     filePath = "video.mp4"
 
      # split file into N chunks
      files = splitIntoChunks(filePath, numberOfChunks= N)
@@ -276,7 +272,7 @@ def threadTwo():
           i += 1
      
      # store another copy at selected peers
-     choosenPeerPorts.reverse()
+     random.shuffle(choosenPeerPorts,shufflingFunction)
      i = 0
      for p in choosenPeerPorts:
           StoreFileAtPeer(p,files[i])
@@ -360,6 +356,15 @@ def threadThree():
                pass
 
      serverSocket.close()
+
+
+serverPort = 12000
+serverSocket = socket(AF_INET,SOCK_STREAM)
+serverSocket.bind(('',serverPort))
+serverSocket.listen(10)
+manifest = []
+files = ["file.txt"]
+peersPorts = []
 
 dumpTheManifestfile()
 print ("The tracker is ready to receive")
