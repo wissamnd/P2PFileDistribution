@@ -9,6 +9,7 @@ import time
 import hashlib
 from socket import error as SocketError
 import errno
+import math
 
 class fileDistributed:
     def __init__(self, name, number_of_chunks , md5Hash, chunks):
@@ -50,6 +51,7 @@ def getFileMD5Hash(path):
           bytes = f.read() # read file as bytes
           readable_hash = hashlib.md5(bytes).hexdigest()
           return readable_hash
+          
 def combineFiles(listOfPathsTofiles, combined_file):
      output_file = open(combined_file,'wb')
      for path in listOfPathsTofiles:
@@ -65,6 +67,7 @@ def combineFiles(listOfPathsTofiles, combined_file):
 def deletedFiles(listOfPathsTofiles):
      for path in listOfPathsTofiles:
           os.remove(path)
+
 def getManifestObjects():
     filehandler = open("manifest.obj", 'rb') 
     manifest = pickle.load(filehandler)
@@ -126,7 +129,7 @@ def requestFileFromTracker(filename):
                         try:
                             requestFileFromPeer(c.fileName, c.peerPort)
                         except SocketError as e:
-                            if e.errno != errno.ECONNRESET:
+                            if e.errno != errno.ECONNRESET and e.errno != errno.EPIPE:
                                 raise # Not error we are looking for
                             pass # Handle error here.
                         files.append(c.fileName)
@@ -137,20 +140,20 @@ def requestFileFromTracker(filename):
     clientSocket.close()
     
 
-def recieveFile(peerSocket):
+def recieveFile(socket):
     SEPARATOR = "<SEPARATOR>"
     BUFFER_SIZE = 4096 # send 4096 bytes each time step
-    received = peerSocket.recv(BUFFER_SIZE).decode()
+    received = socket.recv(BUFFER_SIZE).decode()
     filename, filesize = received.split(SEPARATOR)
     # remove absolute path if there is
     filename = os.path.basename(filename)
     filesize = int(filesize)
     print ("From Server: Sending", filename)
     # recieving file
-    progress = tqdm.tqdm(range(filesize), "Receiving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
+    progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Receiving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
     with open(filename, "wb") as f:
         for _ in progress:
-            bytes_read = peerSocket.recv(BUFFER_SIZE)
+            bytes_read = socket.recv(BUFFER_SIZE)
             if not bytes_read:
                 # nothing is received
                 # file transmitting is done
@@ -159,20 +162,20 @@ def recieveFile(peerSocket):
             progress.update(len(bytes_read))
     return filename
 
-def sendFile(filename, peerSocket):
+def sendFile(filename, socket):
      # send file info
      SEPARATOR = "<SEPARATOR>"
      BUFFER_SIZE = 4096 # send 4096 bytes each time step
      filesize = os.path.getsize(filename)
-     peerSocket.send((filename+SEPARATOR+str(filesize)).encode())
+     socket.send((filename+SEPARATOR+str(filesize)).encode())
      # start sending the file
-     progress = tqdm.tqdm(range(filesize), "Sending "+filename, unit="B", unit_scale=True, unit_divisor=1024)
+     progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Sending "+filename, unit="B", unit_scale=True, unit_divisor=1024)
      with open(filename, "rb") as f:
           for _ in progress:
                bytes_read = f.read(BUFFER_SIZE)
                if not bytes_read:
                     break
-               peerSocket.sendall(bytes_read)
+               socket.sendall(bytes_read)
                progress.update(len(bytes_read))
 
     
@@ -184,25 +187,29 @@ peerSocket.bind(('',peerPort))
 peerSocket.listen(3)
 
 def listenForIncomingIncomingRequests():
-     connectionSocket, addr = peerSocket.accept()
-     action = connectionSocket.recv(2048).decode()
-     if(action == "Sending File"):
-         # Make the tracker know that you confirm storing a chunk on your side
-         connectionSocket.send(("OK: Send your file").encode())
-         # recieve file from tracker
-         recieveFile(connectionSocket)
-     elif ("Requesting file" in action):
-         connectionSocket.send(("OK: Sending your file").encode())
-         message, filename = action.split("|")
-         sendFile(filename, connectionSocket)
-     connectionSocket.close()
+    """Listen for incoming requests from peers and tracker
+    handle two actions:
+    - recieving a file chunk from the tracker to be stored
+    - recieving a request to send the file to the tracker
+    """
+    while True:
+        connectionSocket, addr = peerSocket.accept()
+        action = connectionSocket.recv(2048).decode()
+        if(action == "Sending File"):
+            # Make the tracker know that you confirm storing a chunk on your side
+            connectionSocket.send(("OK: Send your file").encode())
+            # recieve file from tracker
+            recieveFile(connectionSocket)
+        elif ("Requesting file" in action):
+            connectionSocket.send(("OK: Sending your file").encode())
+            message, filename = action.split("|")
+            sendFile(filename, connectionSocket)
+        connectionSocket.close()
 
 
-def threadOne():
-     while True:
-          listenForIncomingIncomingRequests()
 
-def threadTwo():
+def userPrompt():
+     """Prompt the user to enter the file he wants to request from the traker"""
      while True:
          filename = input("Input filename: ")
          if(filename == "quit" ):
@@ -210,7 +217,11 @@ def threadTwo():
          requestFileFromTracker(filename)
 
 
-def threadThree():
+def pingTracker():
+    """Ping the tracker with UDP messages (every 5s) indicating that the peer is still in the connection.
+
+       Message Format: sequence Number|peerPort|timestamp
+    """
     serverName = '127.0.0.1'
     serverPort = 12001
     clientSocket = socket(AF_INET, SOCK_DGRAM)
@@ -223,12 +234,12 @@ def threadThree():
     clientSocket.close()
 
 
-t1 = threading.Thread(target=threadOne, args=()) 
+t1 = threading.Thread(target=listenForIncomingIncomingRequests, args=()) 
 t1.start()
 time.sleep(2)
-t2 = threading.Thread(target=threadTwo, args=()) 
+t2 = threading.Thread(target=userPrompt, args=()) 
 t2.start()
-t3 = threading.Thread(target=threadThree, args=())
+t3 = threading.Thread(target=pingTracker, args=())
 t3.start()
 t1.join()
 

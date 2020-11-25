@@ -9,6 +9,7 @@ import time
 import hashlib
 from socket import error as SocketError
 import errno
+import math
 
 class fileDistributed:
     def __init__(self, name, number_of_chunks , md5Hash, chunks):
@@ -126,7 +127,7 @@ def requestFileFromTracker(filename):
                         try:
                             requestFileFromPeer(c.fileName, c.peerPort)
                         except SocketError as e:
-                            if e.errno != errno.ECONNRESET:
+                            if e.errno != errno.ECONNRESET and e.errno != errno.EPIPE:
                                 raise # Not error we are looking for
                             pass # Handle error here.
                         files.append(c.fileName)
@@ -147,7 +148,7 @@ def recieveFile(peerSocket):
     filesize = int(filesize)
     print ("From Server: Sending", filename)
     # recieving file
-    progress = tqdm.tqdm(range(filesize), "Receiving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
+    progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Receiving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
     with open(filename, "wb") as f:
         for _ in progress:
             bytes_read = peerSocket.recv(BUFFER_SIZE)
@@ -166,7 +167,7 @@ def sendFile(filename, peerSocket):
      filesize = os.path.getsize(filename)
      peerSocket.send((filename+SEPARATOR+str(filesize)).encode())
      # start sending the file
-     progress = tqdm.tqdm(range(filesize), "Sending "+filename, unit="B", unit_scale=True, unit_divisor=1024)
+     progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Sending "+filename, unit="B", unit_scale=True, unit_divisor=1024)
      with open(filename, "rb") as f:
           for _ in progress:
                bytes_read = f.read(BUFFER_SIZE)

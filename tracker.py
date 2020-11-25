@@ -4,12 +4,12 @@ import os
 import math
 import hashlib
 import pickle
-import tqdm
 import time
 import threading 
 import random
 import logging
 import errno
+import tqdm
 class fileDistributed:
     """
     A class used to represent a file distributed by the Tracker
@@ -126,6 +126,7 @@ def removePeerFromManifest(port):
      return filesToRequest
 
 def getListOfPeersPortsHavingtheChunkFileName(chunkFileName):
+     """Get all peers having the chunk"""
      listOfPorts = []
      for files in manifest:
           for chunk in files.chunks:
@@ -145,15 +146,76 @@ def addPeerChunkToManifest(chunk):
                manifest.append(fileWithChunks)
 
 def saveToManifest(filename, numberOfChunks, md5Hash, chuncks):
-     """Save the distributed file into the manifest and manifest file"""
+     """Save the distributed file into the manifest and manifest list"""
      distributed_file = fileDistributed(filename,numberOfChunks, md5Hash, chuncks)
      manifest.append(distributed_file)
 
 def dumpTheManifestfile():
+     """Save the mainfest list objects into the manifest file"""
      manifestfile = open('manifest.obj', 'wb') 
      pickle.dump(manifest, manifestfile)
 
+def recieveFile(peerSocket):
+    """Recieve file on the tracker listening port"""
+    SEPARATOR = "<SEPARATOR>"
+    BUFFER_SIZE = 4096
+    received = peerSocket.recv(BUFFER_SIZE).decode()
+    filename, filesize = received.split(SEPARATOR)
+    # remove absolute path if there is
+    filename = os.path.basename(filename)
+    filesize = int(filesize)
+    print ("From Peer: Sending", filename)
+    # recieving file
+    progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Recieving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
+    with open(filename, "wb") as f:
+        for _ in progress:
+            bytes_read = peerSocket.recv(BUFFER_SIZE)
+            if not bytes_read:
+                # nothing is received
+                # file transmitting is done
+                break
+            f.write(bytes_read)
+            progress.update(len(bytes_read))
+    return filename
+
+def sendFile(filePath, connectionSocket):
+     """ Send file given the connection socket and file path"""
+     SEPARATOR = "<SEPARATOR>"
+     BUFFER_SIZE = 4096 # send 4096 bytes each time step
+     # send file info
+     filesize = os.path.getsize(filePath)
+     connectionSocket.send((filePath+SEPARATOR+str(filesize)).encode())
+          
+     # start sending the file
+     progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Sending "+filePath, unit="B", unit_scale=True, unit_divisor=1024)
+     with open(filePath, "rb") as f:
+          for _ in progress:
+               bytes_read = f.read(BUFFER_SIZE)
+               try:
+                    connectionSocket.sendall(bytes_read)
+               except SocketError as e:
+                    if e.errno != errno.EPIPE:
+                         raise
+                    else:
+                         pass
+               
+               if not bytes_read:
+                    break
+               progress.update(len(bytes_read))
+                    
+
+def shufflingFunction():
+     return 0.1
+
 def requestFileFromPeer(peerPort,filename):
+    """Request file from peer given his listening port number and the file name requested
+    Parameters
+    ---------
+    peerPort : int
+     the listening port number of the peer
+    filename : String
+     the filename of the requested file
+    """
     peerName = "127.0.0.1"
     BUFFER_SIZE = 4096 
     Socket = socket(AF_INET, SOCK_STREAM)
@@ -168,72 +230,15 @@ def requestFileFromPeer(peerPort,filename):
     recieveFile(Socket)
     Socket.close()
 
-def recieveFile(peerSocket):
-    SEPARATOR = "<SEPARATOR>"
-    BUFFER_SIZE = 4096
-    received = peerSocket.recv(BUFFER_SIZE).decode()
-    filename, filesize = received.split(SEPARATOR)
-    # remove absolute path if there is
-    filename = os.path.basename(filename)
-    filesize = int(filesize)
-    print ("From Server: Sending", filename)
-    # recieving file
-    progress = tqdm.tqdm(range(filesize), "Receiving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
-    with open(filename, "wb") as f:
-        for _ in progress:
-            bytes_read = peerSocket.recv(BUFFER_SIZE)
-            if not bytes_read:
-                # nothing is received
-                # file transmitting is done
-                break
-            f.write(bytes_read)
-            progress.update(len(bytes_read))
-    return filename
-
-
-def sendFile(filename, connectionSocket):
-     SEPARATOR = "<SEPARATOR>"
-     BUFFER_SIZE = 4096 # send 4096 bytes each time step
-     # send file info
-     filesize = os.path.getsize(filename)
-     connectionSocket.send((filename+SEPARATOR+str(filesize)).encode())
-          
-     # start sending the file
-     progress = tqdm.tqdm(range(filesize), "Sending "+filename, unit="B", unit_scale=True, unit_divisor=1024)
-     with open(filename, "rb") as f:
-          for _ in progress:
-               bytes_read = f.read(BUFFER_SIZE)
-               if not bytes_read:
-                    break
-               connectionSocket.sendall(bytes_read)
-               progress.update(len(bytes_read))
-
-def shufflingFunction():
-     return 0.1
-
-
-def listenForIncomingPeerRequests():
-     connectionSocket, _ = serverSocket.accept()
-     # recieve client listning port for future communications
-     # handshake = "Hello + PortNumber"
-     handshake = connectionSocket.recv(2048).decode()
-     peerPort = int(handshake.split(" ")[1])
-     if(peerPort not in peersPorts):
-          peersPorts.append(peerPort)
-          print(peersPorts)
-     connectionSocket.send(("HELLO").encode())
-     # recieving the requested filename
-     filename = connectionSocket.recv(2048).decode()
-     print(filename)
-     
-     if(filename in files):
-          sendFile(filename,connectionSocket)
-     else:
-          sendFile("manifest.obj",connectionSocket)
-
-     connectionSocket.close()
-
 def StoreFileAtPeer(peerPort, filePath):
+     """Store file at peer given his listening port number and the file path
+     Parameters
+     ---------
+     peerPort : int
+          the listening port number of the peer
+     filePath : String
+          the path of the file that the tracker wnats to send
+     """
      localhost = "127.0.0.1"
      trackerSocket = socket(AF_INET, SOCK_STREAM)
      trackerSocket.connect((localhost,peerPort))
@@ -245,17 +250,35 @@ def StoreFileAtPeer(peerPort, filePath):
      trackerSocket.close()
 
 
-def threadOne():
+def listenForIncomingPeerRequests():
+     """Listen for incoming requests from peers regarding a file. If found send it to the peer, else send the manifest file."""
      while True:
-          listenForIncomingPeerRequests()
+          connectionSocket, _ = serverSocket.accept()
+          # recieve client listning port for future communications
+          # handshake = "Hello + PortNumber"
+          handshake = connectionSocket.recv(2048).decode()
+          peerPort = int(handshake.split(" ")[1])
+          if(peerPort not in peersPorts):
+               peersPorts.append(peerPort)
+               print(peersPorts)
+          connectionSocket.send(("HELLO").encode())
+          # recieving the requested filename
+          filename = connectionSocket.recv(2048).decode()
+          
+          if(filename in files):
+               sendFile(filename,connectionSocket)
+          else:
+               sendFile("manifest.obj",connectionSocket)
 
-def threadTwo():
+          connectionSocket.close()
+
+def redistributeFile(filePath):
+     """ Redistribute file when the number of peers is equal to 3"""
      N = 3
      # while number of peers is less than N
      while (len(peersPorts) < N):
           time.sleep(5)
      time.sleep(5)
-     filePath = "video.mp4"
 
      # split file into N chunks
      files = splitIntoChunks(filePath, numberOfChunks= N)
@@ -289,7 +312,14 @@ def threadTwo():
 
 
 
-def threadThree():
+def checkIfPeersAreStillConnected():
+     """Check if the peer is stilled connected to the tracker else remove him from manifest and redistribute files.
+     
+     The peer is considered disconnected when the tracker stops recieving UDP packets from the peer for 10s.
+     
+     The tracker maintains a timer for each peer in the connection.
+     
+     """
      # Listining to UDP packets
      serverPort = 12001
      serverSocket = socket(AF_INET, SOCK_DGRAM)
@@ -303,21 +333,12 @@ def threadThree():
                if time.time() - lastContactTime>= 10:
                     print(port+" timeout")
                     if(int(port) in peersPorts):
-
                          # remove peer from the list of peers
                          peersPorts.remove(int(port))
-                         
-
-                        
                          # remove peer from the Manifest
-
                          filesToRequest = removePeerFromManifest(int(port))
-                         for f in manifest:
-                              print(f)
-                         
                          print(filesToRequest)
                          dumpTheManifestfile()
-                         # tested till here
                          # request file from another peers
                          # get the peers to request files from 
                          for f in filesToRequest:
@@ -362,23 +383,24 @@ serverPort = 12000
 serverSocket = socket(AF_INET,SOCK_STREAM)
 serverSocket.bind(('',serverPort))
 serverSocket.listen(10)
-manifest = []
-files = ["file.txt"]
-peersPorts = []
+
+manifest = [] # used to store distributed file objects
+files = ["file.txt"] # used to store paths to the files which the tracker has
+peersPorts = [] # used to store identify that can be used to send files to peers
 
 dumpTheManifestfile()
 print ("The tracker is ready to receive")
 
 # start a thread responsible for satisfying users request
-t1 = threading.Thread(target=threadOne, args=()) 
+t1 = threading.Thread(target=listenForIncomingPeerRequests, args=()) 
 t1.start()
-# start a thread responsible for distributing filecomb.txt if more then 2 peers are avialable
-t2 = threading.Thread(target=threadTwo, args=()) 
+# start a thread responsible for distributing video.mp4 if 3 peers are avialable
+t2 = threading.Thread(target=redistributeFile, args=(["video.mp4"])) 
 t2.start()
 
 # start a thread responsible for making sure the client in still connected
-t3 = threading.Thread(target=threadThree, args=())
+t3 = threading.Thread(target=checkIfPeersAreStillConnected, args=())
 t3.start()
 
-t3.join()
+t1.join()
 
