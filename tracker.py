@@ -121,8 +121,6 @@ def removePeerFromManifest(port):
           fileWithChunks.set_chunks(modifiedchunks)
           fileWithChunks.number_of_chunks = len(modifiedchunks)
           manifest[i] = fileWithChunks
-          for f in manifest:
-               print(f)
      return filesToRequest
 
 def getListOfPeersPortsHavingtheChunkFileName(chunkFileName):
@@ -254,7 +252,7 @@ def listenForIncomingPeerRequests():
      """Listen for incoming requests from peers regarding a file. If found send it to the peer, else send the manifest file."""
      while True:
           connectionSocket, _ = serverSocket.accept()
-          # recieve client listning port for future communications
+          # recieve peer listning port for future communications
           # handshake = "Hello + PortNumber"
           handshake = connectionSocket.recv(2048).decode()
           peerPort = int(handshake.split(" ")[1])
@@ -278,7 +276,7 @@ def redistributeFile(filePath):
      # while number of peers is less than N
      while (len(peersPorts) < N):
           time.sleep(5)
-     time.sleep(5)
+     time.sleep(1)
 
      # split file into N chunks
      files = splitIntoChunks(filePath, numberOfChunks= N)
@@ -293,6 +291,7 @@ def redistributeFile(filePath):
           StoreFileAtPeer(p,files[i])
           chunksList.append(chunk(files[i],i,p))
           i += 1
+          time.sleep(1)
      
      # store another copy at selected peers
      random.shuffle(choosenPeerPorts,shufflingFunction)
@@ -301,11 +300,12 @@ def redistributeFile(filePath):
           StoreFileAtPeer(p,files[i])
           chunksList.append(chunk(files[i],i,p))
           i += 1
+          time.sleep(1)
      
      # save results to a manifest file
      saveToManifest(filePath, N,getFileMD5Hash(filePath),chunksList)
      dumpTheManifestfile()
-     time.sleep(5)
+     time.sleep(2)
      files.append(filePath)
      deletedFiles(files)
 
@@ -355,12 +355,14 @@ def checkIfPeersAreStillConnected():
                               
                               # restore the file chunk the next peer
                               for p in peersPorts:
+                                   
                                    if p not in portsHavingTheFile: # if peer doesn't alreading have the file
                                         StoreFileAtPeer(p,f)
                                         newChunk = chunk(fileName=f,order=0,peerPort=p)
                                         addPeerChunkToManifest(chunk=newChunk)
                                         dumpTheManifestfile()
                                         break
+                              time.sleep(1)
                          deletedFiles(filesToRequest)
                else:
                     tempDictOfPeers[port] = lastContactTime
@@ -385,7 +387,7 @@ serverSocket.bind(('',serverPort))
 serverSocket.listen(10)
 
 manifest = [] # used to store distributed file objects
-files = ["file.txt"] # used to store paths to the files which the tracker has
+files = ["file.txt","sample.mp3"] # used to store paths to the files which the tracker has
 peersPorts = [] # used to store identify that can be used to send files to peers
 
 dumpTheManifestfile()
@@ -398,7 +400,7 @@ t1.start()
 t2 = threading.Thread(target=redistributeFile, args=(["video.mp4"])) 
 t2.start()
 
-# start a thread responsible for making sure the client in still connected
+# start a thread responsible for making sure the peer in still connected
 t3 = threading.Thread(target=checkIfPeersAreStillConnected, args=())
 t3.start()
 

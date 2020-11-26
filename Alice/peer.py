@@ -90,7 +90,7 @@ def requestFileFromPeer(filename, peerPort):
     print("From Tracker:", acceptanceMessage.decode())
     # Requesting the file from the peer
     Socket.send(filename.encode())
-    # Recieving the requested file or manifest file from the server
+    # Recieving the requested file or manifest file from the tracker
     recieveFile(Socket)
     Socket.close()
 
@@ -100,16 +100,16 @@ def requestFileFromTracker(filename):
     serverPort = 12000
     clientSocket = socket(AF_INET, SOCK_STREAM)
     clientSocket.connect((serverName,serverPort))
-    # Handshaking with the server
+    # Handshaking with the tracker
     clientSocket.send(("Hello "+ str(peerPort)).encode())
 
     acceptanceMessage = clientSocket.recv(2048)
-    print("From Server:", acceptanceMessage.decode())
+    print("From Tracker:", acceptanceMessage.decode())
 
-    # Requesting the file from the server
+    # Requesting the file from the tracker
     clientSocket.send(filename.encode())
     
-    # Recieving the requested file or manifest file from the server
+    # Recieving the requested file or manifest file from the tracker
     returnedfileNameFromTracker = recieveFile(clientSocket)
 
     # handle the case where the tracker sends the peer a file
@@ -127,6 +127,7 @@ def requestFileFromTracker(filename):
                         print(c.fileName)
                         print("requesting "+c.fileName+" from", c.peerPort)
                         try:
+                            time.sleep(1)
                             requestFileFromPeer(c.fileName, c.peerPort)
                         except SocketError as e:
                             if e.errno != errno.ECONNRESET and e.errno != errno.EPIPE:
@@ -140,20 +141,20 @@ def requestFileFromTracker(filename):
     clientSocket.close()
     
 
-def recieveFile(socket):
+def recieveFile(peerSocket):
     SEPARATOR = "<SEPARATOR>"
     BUFFER_SIZE = 4096 # send 4096 bytes each time step
-    received = socket.recv(BUFFER_SIZE).decode()
+    received = peerSocket.recv(BUFFER_SIZE).decode()
     filename, filesize = received.split(SEPARATOR)
     # remove absolute path if there is
     filename = os.path.basename(filename)
     filesize = int(filesize)
-    print ("From Server: Sending", filename)
+    print ("From Tracker: Sending", filename)
     # recieving file
     progress = tqdm.tqdm(range(math.ceil((filesize)/BUFFER_SIZE)), "Receiving "+filename, unit="B", unit_scale=True, unit_divisor=1024)
     with open(filename, "wb") as f:
         for _ in progress:
-            bytes_read = socket.recv(BUFFER_SIZE)
+            bytes_read = peerSocket.recv(BUFFER_SIZE)
             if not bytes_read:
                 # nothing is received
                 # file transmitting is done
@@ -188,9 +189,10 @@ peerSocket.listen(3)
 
 def listenForIncomingIncomingRequests():
     """Listen for incoming requests from peers and tracker
-    handle two actions:
+    handles three events:
     - recieving a file chunk from the tracker to be stored
-    - recieving a request to send the file to the tracker
+    - recieving a request to send a file chunk back to the tracker
+    - recieving a request to send a file chunk to a peer
     """
     while True:
         connectionSocket, addr = peerSocket.accept()
