@@ -13,7 +13,7 @@ If the tracker finds that the 3 or more users are in the connection it sends chu
 
 If the tracker stops receiving UDP packets for 10s indicating that it is still in the connection the tracker disconnects the peer. The tracker will then request the lost files chunks back from the peers having the other copies and then store them at another volunteer.
 
-## Similarly, peers have three tasks that runs in parallel:
+Similarly, peers have three tasks that runs in parallel:
 
 ## Listen for incoming request from the tracker and peers
  listens for three events:
