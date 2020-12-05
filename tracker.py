@@ -387,7 +387,7 @@ serverSocket.bind(('',serverPort))
 serverSocket.listen(10)
 
 manifest = [] # used to store distributed file objects
-files = ["file.txt","sample.mp3"] # used to store paths to the files which the tracker has
+files = ["file.txt","audio.mp3","image.jpg"] # used to store paths to the files which the tracker has
 peersPorts = [] # used to store identify that can be used to send files to peers
 
 dumpTheManifestfile()

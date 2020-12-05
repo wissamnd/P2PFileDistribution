@@ -185,7 +185,7 @@ def sendFile(filename, socket):
 peerPort = random.randint(49152,65535)
 peerSocket = socket(AF_INET,SOCK_STREAM)
 peerSocket.bind(('',peerPort))
-peerSocket.listen(3)
+peerSocket.listen(4)
 
 def listenForIncomingIncomingRequests():
     """Listen for incoming requests from peers and tracker
@@ -232,7 +232,7 @@ def pingTracker():
         message = str(sequenceNumber)+"|" + str(peerPort)+ "|"+str(time.time())
         clientSocket.sendto(message.encode(),(serverName, serverPort))
         sequenceNumber+= 1
-        time.sleep(5)
+        time.sleep(2)
     clientSocket.close()
 
 
